@@ -1,0 +1,78 @@
+name: Build SSC338Q Mesh Firmware
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'br-ext-chip-sigmastar/**'
+      - 'general/package/rtl88x2eu-openipc/**'
+      - 'general/package/batman-adv/**'
+
+env:
+  BOARD: ssc338q_ultimate
+
+jobs:
+  build-ssc338q:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        
+      - name: Prepare environment
+        run: |
+          echo "nameserver 8.8.8.8" | sudo tee /etc/resolv.conf > /dev/null
+          echo "=== Firmware Build for SSC338Q Ultimate with Mesh Support ==="
+          echo "Board: ${{ env.BOARD }}"
+          echo "Date: $(date)"
+          
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ env.BOARD }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ env.BOARD }}-
+            ${{ runner.os }}-ccache-
+
+      - name: Build firmware
+        run: |
+          mkdir -p ~/.ccache
+          export GIT_HASH=$(git rev-parse --short ${GITHUB_SHA})
+          export GIT_BRANCH=${GITHUB_REF_NAME}
+          echo "GIT_HASH=${GIT_HASH}" >> $GITHUB_ENV
+          echo "GIT_BRANCH=${GIT_BRANCH}" >> $GITHUB_ENV
+          
+          make defconfig BOARD=${{ env.BOARD }}
+          make build -j$(nproc)
+          
+      - name: List firmware files
+        run: |
+          echo "=== Build Output ==="
+          find output/images -type f \( -name "*.bin" -o -name "*.img" -o -name "*.jffs2" -o -name "*.squashfs" \) -exec ls -lh {} \;
+          
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openipc-${{ env.BOARD }}-firmware
+          path: |
+            output/images/*.bin
+            output/images/*.img
+            output/images/*.jffs2
+            output/images/*.squashfs
+            output/images/uImage*
+            output/images/rootfs*
+          retention-days: 7
+          compression-level: 6
+          
+      - name: Build summary
+        if: always()
+        run: |
+          echo "=== Build Summary ==="
+          echo "Board: ${{ env.BOARD }}"
+          echo "Commit: ${{ env.GIT_HASH }}"
+          echo "Branch: ${{ env.GIT_BRANCH }}"
+          echo "Status: ${{ job.status }}"
