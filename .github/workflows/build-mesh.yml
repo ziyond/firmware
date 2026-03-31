@@ -1,0 +1,60 @@
+name: Build SSC338Q Ultimate with Mesh Support
+
+on:
+  workflow_dispatch:
+    inputs:
+      board:
+        description: 'Board configuration'
+        required: true
+        default: 'ssc338q_ultimate'
+        type: choice
+        options:
+          - ssc338q_ultimate
+          - ssc30kd_ultimate
+          - ssc30kq_ultimate
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        
+      - name: Prepare environment
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential git wget curl \
+            libncurses-dev python3 bc bison flex libssl-dev kmod file gzip xz-utils
+
+      - name: Setup ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ${{ runner.os }}-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-
+
+      - name: Build firmware
+        env:
+          BOARD: ${{ inputs.board || 'ssc338q_ultimate' }}
+        run: |
+          mkdir -p ~/.ccache
+          make defconfig BOARD=${BOARD}
+          make build -j$(nproc)
+          
+      - name: List output files
+        run: |
+          echo "=== Firmware files ==="
+          find output/images -name "*.bin" -o -name "*.img" -o -name "*.jffs2" | head -20
+          
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openipc-${{ inputs.board || 'ssc338q_ultimate' }}-firmware
+          path: |
+            output/images/*.bin
+            output/images/*.img
+            output/images/*.jffs2
+            output/images/*.squashfs
+          retention-days: 7
